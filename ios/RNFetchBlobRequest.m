@@ -115,6 +115,8 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     
     if (backgroundTask) {
         defaultConfigObject = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:taskId];
+        defaultConfigObject.sessionSendsLaunchEvents = YES;
+        defaultConfigObject.discretionary = YES;
     }
     
     // request timeout, -1 if not set in options
@@ -156,8 +158,17 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         respData = [[NSMutableData alloc] init];
         respFile = NO;
     }
-    
-    self.task = [session dataTaskWithRequest:req];
+    if (!backgroundTask) {
+        self.task = [session dataTaskWithRequest:req];
+    } else {
+        if ([[options valueForKey:@"IOSUploadTask"] boolValue]) {
+            self.task = (NSURLSessionTask *)[session uploadTaskWithRequest:req fromFile:[NSURL URLWithString: destPath]];
+        } else if ([[options valueForKey:@"IOSDownloadTask"] boolValue]) {
+            self.task = [session downloadTaskWithRequest:req];
+        } else {
+            self.task = [session dataTaskWithRequest:req];
+        }
+    }
     [self.task resume];
     
     // network status indicator
@@ -207,7 +218,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
             
             partBuffer = [[NSMutableData alloc] init];
             completionHandler(NSURLSessionResponseAllow);
-
+            
             return;
         } else {
             self.isServerPush = [[respCType lowercaseString] RNFBContainsString:@"multipart/x-mixed-replace;"];
@@ -430,7 +441,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     }
     
     NSNumber * now = [NSNumber numberWithFloat:((float)totalBytesWritten/(float)totalBytesExpectedToWrite)];
-
+    
     if ([self.uploadProgressConfig shouldReport:now]) {
         [self.bridge.eventDispatcher
          sendDeviceEventWithName:EVENT_PROGRESS_UPLOAD
@@ -475,3 +486,4 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 
 
 @end
+
