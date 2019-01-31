@@ -11,6 +11,7 @@
 #import "RNFetchBlobFS.h"
 #import "RNFetchBlobConst.h"
 #import "RNFetchBlobReqBuilder.h"
+#import "RNFetchBlobNetwork.h"
 
 #import "IOS7Polyfill.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -159,17 +160,24 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         respFile = NO;
     }
     if (!backgroundTask) {
-        self.task = [session dataTaskWithRequest:req];
+        NSURLSessionDataTask *task = [session dataTaskWithRequest:req];
+        [task resume];
+        self.task = task;
     } else {
         if ([[options valueForKey:@"IOSUploadTask"] boolValue]) {
-            self.task = (NSURLSessionTask *)[session uploadTaskWithRequest:req fromFile:[NSURL URLWithString: destPath]];
+            NSURLSessionUploadTask *task = [session uploadTaskWithRequest:req fromFile:[NSURL URLWithString: destPath]];
+            [task resume];
+            self.task = task;
         } else if ([[options valueForKey:@"IOSDownloadTask"] boolValue]) {
-            self.task = [session downloadTaskWithRequest:req];
+            NSURLSessionDownloadTask *task = [session downloadTaskWithRequest:req];
+            [task resume];
+            self.task = task;
         } else {
-            self.task = [session dataTaskWithRequest:req];
+            NSURLSessionDataTask *task = [session dataTaskWithRequest:req];
+            [task resume];
+            self.task = task;
         }
     }
-    [self.task resume];
     
     // network status indicator
     if ([[options objectForKey:CONFIG_INDICATOR] boolValue]) {
@@ -187,13 +195,50 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 
 
 #pragma mark NSURLSession delegate methods
-
+- (void)configureWriteStream {
+    if (respFile)
+    {
+        @try{
+            NSFileManager * fm = [NSFileManager defaultManager];
+            NSString * folder = [destPath stringByDeletingLastPathComponent];
+            
+            if (![fm fileExistsAtPath:folder]) {
+                [fm createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:NULL error:nil];
+            }
+            
+            // if not set overwrite in options, defaults to TRUE
+            BOOL overwrite = [options valueForKey:@"overwrite"] == nil ? YES : [[options valueForKey:@"overwrite"] boolValue];
+            BOOL appendToExistingFile = [destPath RNFBContainsString:@"?append=true"];
+            
+            appendToExistingFile = !overwrite;
+            
+            // For solving #141 append response data if the file already exists
+            // base on PR#139 @kejinliang
+            if (appendToExistingFile) {
+                destPath = [destPath stringByReplacingOccurrencesOfString:@"?append=true" withString:@""];
+            }
+            
+            if (![fm fileExistsAtPath:destPath]) {
+                [fm createFileAtPath:destPath contents:[[NSData alloc] init] attributes:nil];
+            }
+            
+            writeStream = [[NSOutputStream alloc] initToFileAtPath:destPath append:appendToExistingFile];
+            [writeStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSRunLoopCommonModes];
+            [writeStream open];
+        }
+        @catch(NSException * ex)
+        {
+            NSLog(@"write file error");
+        }
+    }
+}
 
 #pragma mark - Received Response
 // set expected content length on response received
 - (void) URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler
 {
     expectedBytes = [response expectedContentLength];
+    NSLog(@"Receive expected length: %lld", [response expectedContentLength]);
     
     NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse*)response;
     NSInteger statusCode = [(NSHTTPURLResponse *)response statusCode];
@@ -280,41 +325,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         NSLog(@"oops");
     }
     
-    if (respFile)
-    {
-        @try{
-            NSFileManager * fm = [NSFileManager defaultManager];
-            NSString * folder = [destPath stringByDeletingLastPathComponent];
-            
-            if (![fm fileExistsAtPath:folder]) {
-                [fm createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:NULL error:nil];
-            }
-            
-            // if not set overwrite in options, defaults to TRUE
-            BOOL overwrite = [options valueForKey:@"overwrite"] == nil ? YES : [[options valueForKey:@"overwrite"] boolValue];
-            BOOL appendToExistingFile = [destPath RNFBContainsString:@"?append=true"];
-            
-            appendToExistingFile = !overwrite;
-            
-            // For solving #141 append response data if the file already exists
-            // base on PR#139 @kejinliang
-            if (appendToExistingFile) {
-                destPath = [destPath stringByReplacingOccurrencesOfString:@"?append=true" withString:@""];
-            }
-            
-            if (![fm fileExistsAtPath:destPath]) {
-                [fm createFileAtPath:destPath contents:[[NSData alloc] init] attributes:nil];
-            }
-            
-            writeStream = [[NSOutputStream alloc] initToFileAtPath:destPath append:appendToExistingFile];
-            [writeStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSRunLoopCommonModes];
-            [writeStream open];
-        }
-        @catch(NSException * ex)
-        {
-            NSLog(@"write file error");
-        }
-    }
+    [self configureWriteStream];
     
     completionHandler(NSURLSessionResponseAllow);
 }
@@ -323,6 +334,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 // download progress handler
 - (void) URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data
 {
+    NSLog(@"Did receive data: %@", data);
     // For #143 handling multipart/x-mixed-replace response
     if (self.isServerPush)
     {
@@ -350,7 +362,6 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     }
     
     NSNumber * now =[NSNumber numberWithFloat:((float)receivedBytes/(float)expectedBytes)];
-    
     if ([self.progressConfig shouldReport:now]) {
         [self.bridge.eventDispatcher
          sendDeviceEventWithName:EVENT_PROGRESS
@@ -389,6 +400,14 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
             errMsg = @"task cancelled";
         } else {
             errMsg = [error localizedDescription];
+        }
+        NSData *resumedData = [error.userInfo objectForKey:NSURLSessionDownloadTaskResumeData];
+        if (resumedData) {
+            [(NSURLSessionDownloadTask *)task resume];
+            NSURLSessionDownloadTask *task = [session downloadTaskWithResumeData:resumedData];
+            [task resume];
+            self.task = task;
+            return;
         }
     }
     
@@ -429,6 +448,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     
     respData = nil;
     receivedBytes = 0;
+    self.task = nil;
     [session finishTasksAndInvalidate];
     
 }
@@ -468,6 +488,8 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 - (void) URLSessionDidFinishEventsForBackgroundURLSession:(NSURLSession *)session
 {
     NSLog(@"sess done in background");
+    [NSNotificationCenter.defaultCenter postNotificationName:@"DoneDownload" object:nil];
+    [RNFetchBlobNetwork sharedInstance].completion();
 }
 
 - (void) URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler
@@ -484,6 +506,44 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     }
 }
 
+// MARK: - For Download Task delegate
+
+- (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didResumeAtOffset:(int64_t)fileOffset expectedTotalBytes:(int64_t)expectedTotalBytes {
+    NSLog(@"Did resume at %lld", fileOffset);
+}
+
+- (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didFinishDownloadingToURL:(NSURL *)location {
+    
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    NSData *data = [fileManager contentsAtPath:location.path];
+    if (![fileManager fileExistsAtPath:destPath]) {
+        [fileManager createFileAtPath:destPath contents:data attributes:nil];
+    } else {
+        [data writeToFile:destPath atomically:YES];
+    }
+    respData = [NSMutableData dataWithData:[fileManager contentsAtPath:destPath]];
+    [self URLSession:session task:downloadTask didCompleteWithError:nil];
+}
+
+- (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didWriteData:(int64_t)bytesWritten totalBytesWritten:(int64_t)totalBytesWritten totalBytesExpectedToWrite:(int64_t)totalBytesExpectedToWrite {
+    if (totalBytesExpectedToWrite == 0) {
+        return;
+    }
+    NSLog(@"Progress %f", (float)totalBytesWritten / (float) totalBytesExpectedToWrite);
+    NSNumber * now =[NSNumber numberWithFloat:((float)totalBytesWritten/(float)totalBytesExpectedToWrite)];
+    if ([self.progressConfig shouldReport:now]) {
+        [self.bridge.eventDispatcher
+         sendDeviceEventWithName:EVENT_PROGRESS
+         body:@{
+                @"taskId": taskId,
+                @"written": [NSString stringWithFormat:@"%lld", (long long) totalBytesWritten],
+                @"total": [NSString stringWithFormat:@"%lld", (long long) totalBytesExpectedToWrite]
+                }
+         ];
+    }
+    
+}
 
 @end
+
 

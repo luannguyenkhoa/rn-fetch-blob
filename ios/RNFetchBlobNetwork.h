@@ -20,13 +20,15 @@
 #import "RCTBridgeModule.h"
 #endif
 
-
+typedef void (^EventCompleted)(void);
 @interface RNFetchBlobNetwork : NSObject  <NSURLSessionDelegate, NSURLSessionTaskDelegate, NSURLSessionDataDelegate>
 
 @property(nonnull, nonatomic) NSOperationQueue *taskQueue;
 @property(nonnull, nonatomic) NSMapTable<NSString*, RNFetchBlobRequest*> * requestsTable;
 @property(nonnull, nonatomic) NSMutableDictionary<NSString*, RNFetchBlobProgress*> *rebindProgressDict;
 @property(nonnull, nonatomic) NSMutableDictionary<NSString*, RNFetchBlobProgress*> *rebindUploadProgressDict;
+@property(nullable, nonatomic) EventCompleted completion;
+@property(nullable, nonatomic) NSURLSessionTask *latestTaskId;
 
 + (RNFetchBlobNetwork* _Nullable)sharedInstance;
 + (NSMutableDictionary  * _Nullable ) normalizeHeaders:(NSDictionary * _Nullable)headers;

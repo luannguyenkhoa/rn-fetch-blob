@@ -19,7 +19,7 @@
 #import "RCTBridgeModule.h"
 #endif
 
-@interface RNFetchBlobRequest : NSObject <NSURLSessionDelegate, NSURLSessionTaskDelegate, NSURLSessionDataDelegate>
+@interface RNFetchBlobRequest : NSObject <NSURLSessionDelegate, NSURLSessionTaskDelegate, NSURLSessionDataDelegate, NSURLSessionDownloadDelegate>
 
 @property (nullable, nonatomic) NSString * taskId;
 @property (nonatomic) long long expectedBytes;
@@ -45,3 +45,4 @@
 @end
 
 #endif /* RNFetchBlobRequest_h */
+

@@ -57,13 +57,15 @@ static void initialize_tables() {
         self.rebindUploadProgressDict = [NSMutableDictionary dictionary];
     }
     
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
+    
     return self;
 }
 
 + (RNFetchBlobNetwork* _Nullable)sharedInstance {
     static id _sharedInstance = nil;
     static dispatch_once_t onceToken;
-
+    
     dispatch_once(&onceToken, ^{
         _sharedInstance = [[self alloc] init];
     });
@@ -86,7 +88,7 @@ static void initialize_tables() {
              withRequest:req
       taskOperationQueue:self.taskQueue
                 callback:callback];
-    
+    self.latestTaskId = taskId;
     @synchronized([RNFetchBlobNetwork class]) {
         [self.requestsTable setObject:request forKey:taskId];
         [self checkProgressConfig];
@@ -178,4 +180,18 @@ static void initialize_tables() {
     }
 }
 
+- (void)appBecomeActive
+{
+    NSURLSessionDataTask * task;
+    
+    @synchronized ([RNFetchBlobNetwork class]) {
+        task = [self.requestsTable objectForKey:self.latestTaskId].task;
+    }
+    
+    if (task && task.state == NSURLSessionTaskStateRunning) {
+        [task resume];
+    }
+}
+
 @end
+
