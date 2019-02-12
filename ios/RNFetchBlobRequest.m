@@ -170,6 +170,10 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
             self.task = task;
         } else if ([[options valueForKey:@"IOSDownloadTask"] boolValue]) {
             NSURLSessionDownloadTask *task = [session downloadTaskWithRequest:req];
+            NSData *resumeableData = [[NSUserDefaults standardUserDefaults] dataForKey:req.URL.absoluteString];
+            if (resumeableData) {
+                task = [session downloadTaskWithResumeData:resumeableData];
+            }
             [task resume];
             self.task = task;
         } else {
@@ -390,6 +394,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     NSString * errMsg;
     NSString * respStr;
     NSString * rnfbRespType;
+    NSString *urlKey = task.originalRequest.URL.absoluteString;
     
     dispatch_async(dispatch_get_main_queue(), ^{
         [[UIApplication sharedApplication] setNetworkActivityIndicatorVisible:NO];
@@ -403,11 +408,8 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         }
         NSData *resumedData = [error.userInfo objectForKey:NSURLSessionDownloadTaskResumeData];
         if (resumedData) {
-            [(NSURLSessionDownloadTask *)task resume];
-            NSURLSessionDownloadTask *task = [session downloadTaskWithResumeData:resumedData];
-            [task resume];
-            self.task = task;
-            return;
+            /// Cache resumeable data in storage
+            [[NSUserDefaults standardUserDefaults] setValue:resumedData forKey:urlKey];
         }
     }
     
@@ -449,6 +451,11 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     respData = nil;
     receivedBytes = 0;
     self.task = nil;
+    /// Remove cached resumeable data in storage if exists
+    if (!error && [[NSUserDefaults standardUserDefaults] dataForKey:urlKey]) {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:urlKey];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
     [session finishTasksAndInvalidate];
     
 }
@@ -529,7 +536,6 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     if (totalBytesExpectedToWrite == 0) {
         return;
     }
-    NSLog(@"Progress %f", (float)totalBytesWritten / (float) totalBytesExpectedToWrite);
     NSNumber * now =[NSNumber numberWithFloat:((float)totalBytesWritten/(float)totalBytesExpectedToWrite)];
     if ([self.progressConfig shouldReport:now]) {
         [self.bridge.eventDispatcher
