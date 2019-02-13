@@ -115,7 +115,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     defaultConfigObject = [NSURLSessionConfiguration defaultSessionConfiguration];
     
     if (backgroundTask) {
-        defaultConfigObject = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:taskId];
+        defaultConfigObject = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:@"BackgroundSession"];
         defaultConfigObject.sessionSendsLaunchEvents = YES;
         defaultConfigObject.discretionary = YES;
     }
@@ -242,7 +242,6 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 - (void) URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler
 {
     expectedBytes = [response expectedContentLength];
-    NSLog(@"Receive expected length: %lld", [response expectedContentLength]);
     
     NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse*)response;
     NSInteger statusCode = [(NSHTTPURLResponse *)response statusCode];
@@ -338,7 +337,6 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 // download progress handler
 - (void) URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data
 {
-    NSLog(@"Did receive data: %@", data);
     // For #143 handling multipart/x-mixed-replace response
     if (self.isServerPush)
     {
@@ -394,7 +392,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     NSString * errMsg;
     NSString * respStr;
     NSString * rnfbRespType;
-    NSString *urlKey = task.originalRequest.URL.absoluteString;
+    NSString *urlKey = task.currentRequest.URL.absoluteString;
     
     dispatch_async(dispatch_get_main_queue(), ^{
         [[UIApplication sharedApplication] setNetworkActivityIndicatorVisible:NO];
@@ -494,9 +492,9 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 
 - (void) URLSessionDidFinishEventsForBackgroundURLSession:(NSURLSession *)session
 {
-    NSLog(@"sess done in background");
-    [NSNotificationCenter.defaultCenter postNotificationName:@"DoneDownload" object:nil];
-    [RNFetchBlobNetwork sharedInstance].completion();
+    if ([RNFetchBlobNetwork sharedInstance].completion) {
+        [RNFetchBlobNetwork sharedInstance].completion();
+    }
 }
 
 - (void) URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler
@@ -516,7 +514,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 // MARK: - For Download Task delegate
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didResumeAtOffset:(int64_t)fileOffset expectedTotalBytes:(int64_t)expectedTotalBytes {
-    NSLog(@"Did resume at %lld", fileOffset);
+    [self handleDownloadProgress:(float)fileOffset total:(float)expectedTotalBytes];
 }
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didFinishDownloadingToURL:(NSURL *)location {
@@ -536,7 +534,12 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     if (totalBytesExpectedToWrite == 0) {
         return;
     }
-    NSNumber * now =[NSNumber numberWithFloat:((float)totalBytesWritten/(float)totalBytesExpectedToWrite)];
+    [self handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite];
+}
+
+- (void)handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite
+{
+    NSNumber *now = [NSNumber numberWithFloat:(totalBytesWritten/totalBytesExpectedToWrite)];
     if ([self.progressConfig shouldReport:now]) {
         [self.bridge.eventDispatcher
          sendDeviceEventWithName:EVENT_PROGRESS
@@ -547,9 +550,10 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
                 }
          ];
     }
-    
 }
 
 @end
+
+
 
 

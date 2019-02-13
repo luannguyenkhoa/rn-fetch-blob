@@ -535,6 +535,12 @@ RCT_EXPORT_METHOD(cancelRequest:(NSString *)taskId callback:(RCTResponseSenderBl
 
 }
 
+RCT_EXPORT_METHOD(cleanUpStorage) {
+    NSString *domain = [[NSBundle mainBundle] bundleIdentifier];
+    [[NSUserDefaults standardUserDefaults] removePersistentDomainForName:domain];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
 #pragma mark - net.enableProgressReport
 RCT_EXPORT_METHOD(enableProgressReport:(NSString *)taskId interval:(nonnull NSNumber*)interval count:(nonnull NSNumber*)count)
 {

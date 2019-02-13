@@ -21,6 +21,7 @@
 #endif
 
 typedef void (^EventCompleted)(void);
+
 @interface RNFetchBlobNetwork : NSObject  <NSURLSessionDelegate, NSURLSessionTaskDelegate, NSURLSessionDataDelegate>
 
 @property(nonnull, nonatomic) NSOperationQueue *taskQueue;
@@ -45,8 +46,8 @@ typedef void (^EventCompleted)(void);
 - (void) enableProgressReport:(NSString * _Nonnull) taskId config:(RNFetchBlobProgress * _Nullable)config;
 - (void) enableUploadProgress:(NSString * _Nonnull) taskId config:(RNFetchBlobProgress * _Nullable)config;
 
-
 @end
 
 
 #endif /* RNFetchBlobNetwork_h */
+

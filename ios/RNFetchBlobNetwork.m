@@ -41,7 +41,6 @@ static void initialize_tables() {
     }
 }
 
-
 @implementation RNFetchBlobNetwork
 
 
@@ -137,13 +136,27 @@ static void initialize_tables() {
 
 - (void) cancelRequest:(NSString *)taskId
 {
-    NSURLSessionDataTask * task;
+    NSURLSessionTask * task;
     
     @synchronized ([RNFetchBlobNetwork class]) {
         task = [self.requestsTable objectForKey:taskId].task;
     }
     
     if (task && task.state == NSURLSessionTaskStateRunning) {
+        [self cancelTask:task];
+    }
+}
+
+- (void)cancelTask:(NSURLSessionTask *)task;
+{
+    if ([task isKindOfClass:[NSURLSessionDownloadTask class]]) {
+        [(NSURLSessionDownloadTask *)task cancelByProducingResumeData:^(NSData * _Nullable resumeData) {
+            if (resumeData) {
+                /// Cache resumeable data in storage
+                [[NSUserDefaults standardUserDefaults] setValue:resumeData forKey:task.originalRequest.URL.absoluteString];
+            }
+        }];
+    } else {
         [task cancel];
     }
 }
@@ -182,7 +195,7 @@ static void initialize_tables() {
 
 - (void)appBecomeActive
 {
-    NSURLSessionDataTask * task;
+    NSURLSessionTask * task;
     
     @synchronized ([RNFetchBlobNetwork class]) {
         task = [self.requestsTable objectForKey:self.latestTaskId].task;
