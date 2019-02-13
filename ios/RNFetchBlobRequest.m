@@ -439,13 +439,14 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         }
     }
     
-    
-    callback(@[
-               errMsg ?: [NSNull null],
-               rnfbRespType ?: @"",
-               respStr ?: [NSNull null]
-               ]);
-    
+    if (callback) {
+        callback(@[
+                   errMsg ?: [NSNull null],
+                   rnfbRespType ?: @"",
+                   respStr ?: [NSNull null]
+                   ]);
+    }
+    callback = nil;
     respData = nil;
     receivedBytes = 0;
     self.task = nil;
