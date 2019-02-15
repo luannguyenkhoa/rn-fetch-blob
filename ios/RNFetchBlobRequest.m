@@ -120,12 +120,9 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         defaultConfigObject.discretionary = YES;
     }
     
-    // request timeout, -1 if not set in options
-    float timeout = [options valueForKey:@"timeout"] == nil ? -1 : [[options valueForKey:@"timeout"] floatValue];
-    
-    if (timeout > 0) {
-        defaultConfigObject.timeoutIntervalForRequest = timeout/1000;
-    }
+    // set request/resource timeout
+    defaultConfigObject.timeoutIntervalForRequest = 30.0;
+    defaultConfigObject.timeoutIntervalForResource = 120.0;
     
     defaultConfigObject.HTTPMaximumConnectionsPerHost = 10;
     session = [NSURLSession sessionWithConfiguration:defaultConfigObject delegate:self delegateQueue:operationQueue];
