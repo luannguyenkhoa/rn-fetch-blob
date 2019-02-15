@@ -521,11 +521,10 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didFinishDownloadingToURL:(NSURL *)location {
     
     NSFileManager *fileManager = [NSFileManager defaultManager];
-    NSData *data = [fileManager contentsAtPath:location.path];
-    if (![fileManager fileExistsAtPath:destPath]) {
-        [fileManager createFileAtPath:destPath contents:data attributes:nil];
-    } else {
-        [data writeToFile:destPath atomically:YES];
+    NSError *error;
+    [fileManager moveItemAtPath:location.path toPath:destPath error:&error];
+    if (error) {
+        NSLog(@"Moved with error: %@", error);
     }
     respData = [NSMutableData dataWithData:[fileManager contentsAtPath:destPath]];
     [self URLSession:session task:downloadTask didCompleteWithError:nil];
