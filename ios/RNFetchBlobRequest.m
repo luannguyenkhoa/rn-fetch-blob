@@ -37,6 +37,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     ResponseFormat responseFormat;
     BOOL followRedirect;
     BOOL backgroundTask;
+    BOOL shouldCompleteTask;
 }
 
 @end
@@ -81,6 +82,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     self.expectedBytes = 0;
     self.receivedBytes = 0;
     self.options = options;
+    shouldCompleteTask = true;
     
     backgroundTask = [[options valueForKey:@"IOSBackgroundTask"] boolValue];
     // when followRedirect not set in options, defaults to TRUE
@@ -126,6 +128,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     
     defaultConfigObject.HTTPMaximumConnectionsPerHost = 10;
     session = [NSURLSession sessionWithConfiguration:defaultConfigObject delegate:self delegateQueue:operationQueue];
+    self.session = session;
     
     if (path || [self.options valueForKey:CONFIG_USE_TEMP]) {
         respFile = YES;
@@ -173,6 +176,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
             }
             [task resume];
             self.task = task;
+            shouldCompleteTask = false;
         } else {
             NSURLSessionDataTask *task = [session dataTaskWithRequest:req];
             [task resume];
@@ -384,7 +388,6 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 
 - (void) URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
 {
-    
     self.error = error;
     NSString * errMsg;
     NSString * respStr;
@@ -406,6 +409,8 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
             /// Cache resumeable data in storage
             [[NSUserDefaults standardUserDefaults] setValue:resumedData forKey:urlKey];
         }
+    } else if (!shouldCompleteTask) {
+        return;
     }
     
     if (respFile) {
@@ -519,12 +524,14 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     
     NSFileManager *fileManager = [NSFileManager defaultManager];
     NSError *error;
-    [fileManager moveItemAtPath:location.path toPath:destPath error:&error];
+    [fileManager removeItemAtPath:destPath error:NULL];
+    [fileManager copyItemAtPath:location.path toPath:destPath error:&error];
     if (error) {
         NSLog(@"Moved with error: %@", error);
     }
     respData = [NSMutableData dataWithData:[fileManager contentsAtPath:destPath]];
-    [self URLSession:session task:downloadTask didCompleteWithError:nil];
+    shouldCompleteTask = true;
+    [self URLSession:session task:downloadTask didCompleteWithError:error];
 }
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didWriteData:(int64_t)bytesWritten totalBytesWritten:(int64_t)totalBytesWritten totalBytesExpectedToWrite:(int64_t)totalBytesExpectedToWrite {

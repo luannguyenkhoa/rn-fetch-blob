@@ -195,14 +195,22 @@ static void initialize_tables() {
 
 - (void)appBecomeActive
 {
-    NSURLSessionTask * task;
+    NSMutableArray *sessions = [NSMutableArray new];
     
     @synchronized ([RNFetchBlobNetwork class]) {
-        task = [self.requestsTable objectForKey:self.latestTaskId].task;
+        for (RNFetchBlobRequest *req in self.requestsTable.objectEnumerator) {
+            [sessions addObject:req.session];
+        }
     }
     
-    if (task && task.state == NSURLSessionTaskStateRunning) {
-        [task resume];
+    for (NSURLSession *session in sessions) {
+        [session getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> * _Nonnull tasks) {
+            for (NSURLSessionTask *task in tasks) {
+                if ([task isKindOfClass:[NSURLSessionDownloadTask class]] && task.state == NSURLSessionTaskStateRunning) {
+                    [task resume];
+                }
+            }
+        }];
     }
 }
 
