@@ -195,22 +195,20 @@ static void initialize_tables() {
 
 - (void)appBecomeActive
 {
-    NSMutableArray *sessions = [NSMutableArray new];
-    
+    NSMutableArray *urls = [NSMutableArray new];
     @synchronized ([RNFetchBlobNetwork class]) {
         for (RNFetchBlobRequest *req in self.requestsTable.objectEnumerator) {
-            [sessions addObject:req.session];
-        }
-    }
-    
-    for (NSURLSession *session in sessions) {
-        [session getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> * _Nonnull tasks) {
-            for (NSURLSessionTask *task in tasks) {
-                if ([task isKindOfClass:[NSURLSessionDownloadTask class]] && task.state == NSURLSessionTaskStateRunning) {
-                    [task resume];
+            [req.session getTasksWithCompletionHandler:^(NSArray<NSURLSessionDataTask *> * _Nonnull dataTasks, NSArray<NSURLSessionUploadTask *> * _Nonnull uploadTasks, NSArray<NSURLSessionDownloadTask *> * _Nonnull downloadTasks) {
+                for (NSURLSessionDownloadTask *task in downloadTasks) {
+                    if (task.state == NSURLSessionTaskStateRunning && ![urls containsObject:task.currentRequest.URL.absoluteString]) {
+                        [urls addObject:task.currentRequest.URL.absoluteString];
+                        [task resume];
+                    } else {
+                        [task suspend];
+                    }
                 }
-            }
-        }];
+            }];
+        }
     }
 }
 
