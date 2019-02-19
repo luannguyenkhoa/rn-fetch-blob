@@ -117,14 +117,14 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     defaultConfigObject = [NSURLSessionConfiguration defaultSessionConfiguration];
     
     if (backgroundTask) {
-        defaultConfigObject = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:@"BackgroundSession"];
+        defaultConfigObject = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:taskId];
         defaultConfigObject.sessionSendsLaunchEvents = YES;
         defaultConfigObject.discretionary = YES;
     }
     
     // set request/resource timeout
     defaultConfigObject.timeoutIntervalForRequest = 30.0;
-    defaultConfigObject.timeoutIntervalForResource = 120.0;
+    defaultConfigObject.timeoutIntervalForResource = 30.0;
     
     defaultConfigObject.HTTPMaximumConnectionsPerHost = 10;
     session = [NSURLSession sessionWithConfiguration:defaultConfigObject delegate:self delegateQueue:operationQueue];
@@ -453,12 +453,39 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     receivedBytes = 0;
     self.task = nil;
     /// Remove cached resumeable data in storage if exists
-    if (!error && [[NSUserDefaults standardUserDefaults] dataForKey:urlKey]) {
+    if (!error && urlKey && [[NSUserDefaults standardUserDefaults] dataForKey:urlKey]) {
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:urlKey];
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
     [session finishTasksAndInvalidate];
-    
+    /// Remove the self from caching table
+    [[[RNFetchBlobNetwork sharedInstance] requestsTable] removeObjectForKey:taskId];
+    /// Finish and invalidate duplicated task
+    [self invilidateDup:urlKey];
+}
+
+- (void)invilidateDup:(NSString *)url
+{
+    NSMutableArray *eliKeys = [NSMutableArray new];
+    for (NSString *key in [[RNFetchBlobNetwork sharedInstance] requestsTable].keyEnumerator) {
+        __block BOOL matched = NO;
+        RNFetchBlobRequest *req = [[RNFetchBlobNetwork sharedInstance].requestsTable objectForKey:key];
+        [req.session getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> * _Nonnull tasks) {
+            for (NSURLSessionTask *task in tasks) {
+                /// Noted down if it's a duplicated task
+                if ([task.currentRequest.URL.absoluteString isEqualToString:url]) {
+                    matched = YES;
+                }
+            }
+        }];
+        if (matched) {
+            [req.session finishTasksAndInvalidate];
+            [eliKeys addObject:key];
+        }
+    }
+    for (NSString *key in eliKeys) {
+        [[[RNFetchBlobNetwork sharedInstance] requestsTable] removeObjectForKey:key];
+    }
 }
 
 // upload progress handler
@@ -557,7 +584,3 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 }
 
 @end
-
-
-
-
