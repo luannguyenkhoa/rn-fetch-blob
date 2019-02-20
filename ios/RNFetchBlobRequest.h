@@ -34,6 +34,7 @@
 @property (nullable, nonatomic) RNFetchBlobProgress *uploadProgressConfig;
 @property (nullable, nonatomic, weak) NSURLSessionTask *task;
 @property (nullable, nonatomic, weak) NSURLSession *session;
+@property (nullable, nonatomic) NSError* customError;
 
 - (void) sendRequest:(NSDictionary  * _Nullable )options
        contentLength:(long)contentLength

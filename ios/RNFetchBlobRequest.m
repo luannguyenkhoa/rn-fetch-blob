@@ -400,8 +400,8 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     });
     
     if (error) {
-        if (error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled) {
-            errMsg = @"task cancelled";
+        if (self.customError) {
+            errMsg = [self.customError localizedDescription];
         } else {
             errMsg = [error localizedDescription];
         }
@@ -545,7 +545,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 // MARK: - For Download Task delegate
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didResumeAtOffset:(int64_t)fileOffset expectedTotalBytes:(int64_t)expectedTotalBytes {
-    [self handleDownloadProgress:(float)fileOffset total:(float)expectedTotalBytes];
+    [self handleDownloadProgress:(float)fileOffset total:(float)expectedTotalBytes url:downloadTask.currentRequest.URL.absoluteString];
 }
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didFinishDownloadingToURL:(NSURL *)location {
@@ -566,10 +566,10 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     if (totalBytesExpectedToWrite == 0) {
         return;
     }
-    [self handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite];
+    [self handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite url:downloadTask.currentRequest.URL.absoluteString];
 }
 
-- (void)handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite
+- (void)handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite url:(NSString *)url
 {
     NSNumber *now = [NSNumber numberWithFloat:(totalBytesWritten/totalBytesExpectedToWrite)];
     if ([self.progressConfig shouldReport:now]) {
@@ -585,4 +585,3 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 }
 
 @end
-

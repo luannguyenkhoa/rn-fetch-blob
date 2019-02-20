@@ -15,6 +15,7 @@
 		A166D1AA1CE0647A00273590 /* RNFetchBlob.h in Sources */ = {isa = PBXBuildFile; fileRef = A15C30111CD25C330074CB35 /* RNFetchBlob.h */; };
 		A19B48251D98102400E6868A /* RNFetchBlobProgress.m in Sources */ = {isa = PBXBuildFile; fileRef = A19B48241D98102400E6868A /* RNFetchBlobProgress.m */; };
 		A1AAE2991D300E4D0051D11C /* RNFetchBlobReqBuilder.m in Sources */ = {isa = PBXBuildFile; fileRef = A1AAE2981D300E4D0051D11C /* RNFetchBlobReqBuilder.m */; };
+		B30BBC96221D43AF001C4377 /* Reachability.m in Sources */ = {isa = PBXBuildFile; fileRef = B30BBC94221D43AE001C4377 /* Reachability.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -46,6 +47,8 @@
 		A1AAE2971D300E3E0051D11C /* RNFetchBlobReqBuilder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RNFetchBlobReqBuilder.h; sourceTree = "<group>"; };
 		A1AAE2981D300E4D0051D11C /* RNFetchBlobReqBuilder.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RNFetchBlobReqBuilder.m; sourceTree = "<group>"; };
 		A1F950181D7E9134002A95A6 /* IOS7Polyfill.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = IOS7Polyfill.h; sourceTree = "<group>"; };
+		B30BBC94221D43AE001C4377 /* Reachability.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = Reachability.m; sourceTree = "<group>"; };
+		B30BBC95221D43AE001C4377 /* Reachability.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Reachability.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,6 +87,8 @@
 				A158F4261D052E49006FFD38 /* RNFetchBlobFS.m */,
 				A15C30111CD25C330074CB35 /* RNFetchBlob.h */,
 				A15C30131CD25C330074CB35 /* RNFetchBlob.m */,
+				B30BBC95221D43AE001C4377 /* Reachability.h */,
+				B30BBC94221D43AE001C4377 /* Reachability.m */,
 				A15C300F1CD25C330074CB35 /* Products */,
 				8BD9ABDFAF76406291A798F2 /* Libraries */,
 			);
@@ -160,6 +165,7 @@
 				A158F4301D0539DB006FFD38 /* RNFetchBlobNetwork.m in Sources */,
 				A19B48251D98102400E6868A /* RNFetchBlobProgress.m in Sources */,
 				A1AAE2991D300E4D0051D11C /* RNFetchBlobReqBuilder.m in Sources */,
+				B30BBC96221D43AF001C4377 /* Reachability.m in Sources */,
 				A15C30141CD25C330074CB35 /* RNFetchBlob.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

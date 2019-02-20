@@ -13,6 +13,7 @@
 #import "RNFetchBlob.h"
 #import "RNFetchBlobConst.h"
 #import "RNFetchBlobProgress.h"
+#import "Reachability.h"
 
 #if __has_include(<React/RCTAssert.h>)
 #import <React/RCTRootView.h>
@@ -41,6 +42,12 @@ static void initialize_tables() {
     }
 }
 
+@interface RNFetchBlobNetwork()
+
+@property (nonatomic) Reachability *internetReachability;
+
+@end
+
 @implementation RNFetchBlobNetwork
 
 
@@ -54,9 +61,12 @@ static void initialize_tables() {
         self.taskQueue.maxConcurrentOperationCount = 10;
         self.rebindProgressDict = [NSMutableDictionary dictionary];
         self.rebindUploadProgressDict = [NSMutableDictionary dictionary];
+        self.internetReachability = [Reachability reachabilityForInternetConnection];
+        [self.internetReachability startNotifier];
+        
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reachabilityChanged:) name:kReachabilityChangedNotification object:nil];
     }
-    
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
     
     return self;
 }
@@ -79,6 +89,15 @@ static void initialize_tables() {
          withRequest:(__weak NSURLRequest * _Nullable)req
             callback:(_Nullable RCTResponseSenderBlock) callback
 {
+    /// Turn back immediately if no network connection
+    if (self.internetReachability.currentReachabilityStatus == NotReachable) {
+        callback(@[
+                   @"No network connection",
+                   [NSNull null],
+                   [NSNull null]
+                   ]);
+        return;
+    }
     RNFetchBlobRequest *request = [[RNFetchBlobRequest alloc] init];
     [request sendRequest:options
            contentLength:contentLength
@@ -144,6 +163,7 @@ static void initialize_tables() {
     
     if (task && task.state == NSURLSessionTaskStateRunning) {
         [self cancelTask:task];
+        [self.requestsTable removeObjectForKey:taskId];
     }
 }
 
@@ -151,9 +171,10 @@ static void initialize_tables() {
 {
     if ([task isKindOfClass:[NSURLSessionDownloadTask class]]) {
         [(NSURLSessionDownloadTask *)task cancelByProducingResumeData:^(NSData * _Nullable resumeData) {
-            if (resumeData) {
+            NSString *key = task.originalRequest.URL.absoluteString;
+            if (resumeData && key) {
                 /// Cache resumeable data in storage
-                [[NSUserDefaults standardUserDefaults] setValue:resumeData forKey:task.originalRequest.URL.absoluteString];
+                [[NSUserDefaults standardUserDefaults] setValue:resumeData forKey:key];
             }
         }];
     } else {
@@ -212,5 +233,30 @@ static void initialize_tables() {
     }
 }
 
+- (void) reachabilityChanged:(NSNotification *)note
+{
+    Reachability* curReach = [note object];
+    NSParameterAssert([curReach isKindOfClass:[Reachability class]]);
+    if (curReach.currentReachabilityStatus == NotReachable) {
+        @synchronized ([RNFetchBlobNetwork class]) {
+            NSDictionary *userInfo = @{
+                                       NSLocalizedDescriptionKey: NSLocalizedString(@"The connection failed because the network connection was lost.", nil),
+                                       NSLocalizedFailureReasonErrorKey: NSLocalizedString(@"The network connection was lost", nil),
+                                       NSLocalizedRecoverySuggestionErrorKey: NSLocalizedString(@"Have you tried turning it off and on again?", nil)};
+            for (RNFetchBlobRequest *req in self.requestsTable.objectEnumerator) {
+                [req.session getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> * _Nonnull tasks) {
+                    for (NSURLSessionTask *task in tasks) {
+                        req.customError = [NSError errorWithDomain:@"NSErrorDomain" code:NSURLErrorNetworkConnectionLost userInfo:userInfo];
+                        [self cancelTask:task];
+                    }
+                }];
+            }
+            [self.requestsTable removeAllObjects];
+        }
+    }
+}
+
 @end
+
+
 
