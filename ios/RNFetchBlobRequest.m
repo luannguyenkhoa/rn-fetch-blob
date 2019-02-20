@@ -121,11 +121,12 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         defaultConfigObject.sessionSendsLaunchEvents = YES;
         defaultConfigObject.discretionary = YES;
     }
-    
+    NSMutableURLRequest *mutableReq = (NSMutableURLRequest *)req;
     // set request/resource timeout
+    if (@available(iOS 8.0, *)) {
+        mutableReq.timeoutInterval = 30.0;
+    }
     defaultConfigObject.timeoutIntervalForRequest = 30.0;
-    defaultConfigObject.timeoutIntervalForResource = 30.0;
-    
     defaultConfigObject.HTTPMaximumConnectionsPerHost = 10;
     session = [NSURLSession sessionWithConfiguration:defaultConfigObject delegate:self delegateQueue:operationQueue];
     self.session = session;
@@ -160,16 +161,16 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         respFile = NO;
     }
     if (!backgroundTask) {
-        NSURLSessionDataTask *task = [session dataTaskWithRequest:req];
+        NSURLSessionDataTask *task = [session dataTaskWithRequest:mutableReq];
         [task resume];
         self.task = task;
     } else {
         if ([[options valueForKey:@"IOSUploadTask"] boolValue]) {
-            NSURLSessionUploadTask *task = [session uploadTaskWithRequest:req fromFile:[NSURL URLWithString: destPath]];
+            NSURLSessionUploadTask *task = [session uploadTaskWithRequest:mutableReq fromFile:[NSURL URLWithString: destPath]];
             [task resume];
             self.task = task;
         } else if ([[options valueForKey:@"IOSDownloadTask"] boolValue]) {
-            NSURLSessionDownloadTask *task = [session downloadTaskWithRequest:req];
+            NSURLSessionDownloadTask *task = [session downloadTaskWithRequest:mutableReq];
             NSData *resumeableData = [[NSUserDefaults standardUserDefaults] dataForKey:req.URL.absoluteString];
             if (resumeableData) {
                 task = [session downloadTaskWithResumeData:resumeableData];
@@ -178,7 +179,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
             self.task = task;
             shouldCompleteTask = false;
         } else {
-            NSURLSessionDataTask *task = [session dataTaskWithRequest:req];
+            NSURLSessionDataTask *task = [session dataTaskWithRequest:mutableReq];
             [task resume];
             self.task = task;
         }
@@ -584,3 +585,4 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 }
 
 @end
+
