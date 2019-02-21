@@ -173,7 +173,11 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
             NSURLSessionDownloadTask *task = [session downloadTaskWithRequest:mutableReq];
             NSData *resumeableData = [[NSUserDefaults standardUserDefaults] dataForKey:req.URL.absoluteString];
             if (resumeableData) {
-                task = [session downloadTaskWithResumeData:resumeableData];
+                @try {
+                    task = [session downloadTaskWithResumeData:resumeableData];
+                } @catch (NSException *exception) {
+                    [self removeResumeData:req.URL.absoluteString];
+                }
             }
             [task resume];
             self.task = task;
@@ -454,15 +458,22 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     receivedBytes = 0;
     self.task = nil;
     /// Remove cached resumeable data in storage if exists
-    if (!error && urlKey && [[NSUserDefaults standardUserDefaults] dataForKey:urlKey]) {
-        [[NSUserDefaults standardUserDefaults] removeObjectForKey:urlKey];
-        [[NSUserDefaults standardUserDefaults] synchronize];
+    if (!error && urlKey) {
+        [self removeResumeData:urlKey];
     }
     [session finishTasksAndInvalidate];
     /// Remove the self from caching table
     [[[RNFetchBlobNetwork sharedInstance] requestsTable] removeObjectForKey:taskId];
     /// Finish and invalidate duplicated task
     [self invilidateDup:urlKey];
+}
+
+- (void)removeResumeData:(NSString *)key
+{
+    if ([[NSUserDefaults standardUserDefaults] dataForKey:key]) {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:key];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+    }
 }
 
 - (void)invilidateDup:(NSString *)url
