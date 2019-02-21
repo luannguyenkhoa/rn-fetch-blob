@@ -65,7 +65,8 @@ static void initialize_tables() {
         [self.internetReachability startNotifier];
         
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
-        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reachabilityChanged:) name:kReachabilityChangedNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reachabilityChanged) name:kReachabilityChangedNotification object:nil];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reachabilityChanged) name:@"kSEGReachabilityChangedNotification" object:nil];
     }
     
     return self;
@@ -233,11 +234,9 @@ static void initialize_tables() {
     }
 }
 
-- (void) reachabilityChanged:(NSNotification *)note
+- (void) reachabilityChanged
 {
-    Reachability* curReach = [note object];
-    NSParameterAssert([curReach isKindOfClass:[Reachability class]]);
-    if (curReach.currentReachabilityStatus == NotReachable) {
+    if (self.internetReachability.currentReachabilityStatus == NotReachable) {
         @synchronized ([RNFetchBlobNetwork class]) {
             NSDictionary *userInfo = @{
                                        NSLocalizedDescriptionKey: NSLocalizedString(@"The connection failed because the network connection was lost.", nil),
