@@ -38,6 +38,8 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     BOOL followRedirect;
     BOOL backgroundTask;
     BOOL shouldCompleteTask;
+    NSURLRequest *crrReq;
+    float lastProgress;
 }
 
 @end
@@ -83,6 +85,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     self.receivedBytes = 0;
     self.options = options;
     shouldCompleteTask = true;
+    lastProgress = 0;
     
     backgroundTask = [[options valueForKey:@"IOSBackgroundTask"] boolValue];
     // when followRedirect not set in options, defaults to TRUE
@@ -160,6 +163,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         respData = [[NSMutableData alloc] init];
         respFile = NO;
     }
+    crrReq = (NSURLRequest *)mutableReq;
     if (!backgroundTask) {
         NSURLSessionDataTask *task = [session dataTaskWithRequest:mutableReq];
         [task resume];
@@ -173,11 +177,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
             NSURLSessionDownloadTask *task = [session downloadTaskWithRequest:mutableReq];
             NSData *resumeableData = [[NSUserDefaults standardUserDefaults] dataForKey:req.URL.absoluteString];
             if (resumeableData) {
-                @try {
-                    task = [session downloadTaskWithResumeData:resumeableData];
-                } @catch (NSException *exception) {
-                    [self removeResumeData:req.URL.absoluteString];
-                }
+                task = [session downloadTaskWithResumeData:resumeableData];
             }
             [task resume];
             self.task = task;
@@ -407,8 +407,14 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         if (self.customError) {
             errMsg = [self.customError localizedDescription];
         } else {
-            errMsg = [error localizedDescription];
+            if (error.code == NSURLErrorCannotWriteToFile) {
+                [self removeResumeData:crrReq.URL.absoluteString];
+                errMsg = NSLocalizedString(@"Something went wrong. Let's retry!", nil);
+            } else {
+                errMsg = [error localizedDescription];
+            }
         }
+        
         NSData *resumedData = [error.userInfo objectForKey:NSURLSessionDownloadTaskResumeData];
         if (resumedData) {
             /// Cache resumeable data in storage
@@ -470,7 +476,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 
 - (void)removeResumeData:(NSString *)key
 {
-    if ([[NSUserDefaults standardUserDefaults] dataForKey:key]) {
+    if (key && [[NSUserDefaults standardUserDefaults] dataForKey:key]) {
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:key];
         [[NSUserDefaults standardUserDefaults] synchronize];
     }
@@ -583,6 +589,10 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 - (void)handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite url:(NSString *)url
 {
     NSNumber *now = [NSNumber numberWithFloat:(totalBytesWritten/totalBytesExpectedToWrite)];
+    if (lastProgress >= [now floatValue]) {
+        return;
+    }
+    lastProgress = [now floatValue];
     if ([self.progressConfig shouldReport:now]) {
         [self.bridge.eventDispatcher
          sendDeviceEventWithName:EVENT_PROGRESS
@@ -596,3 +606,4 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 }
 
 @end
+

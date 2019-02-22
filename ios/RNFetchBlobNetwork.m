@@ -1,3 +1,4 @@
+
 //
 //  RNFetchBlobNetwork.m
 //  RNFetchBlob
@@ -256,6 +257,4 @@ static void initialize_tables() {
 }
 
 @end
-
-
 
