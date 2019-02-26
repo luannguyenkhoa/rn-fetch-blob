@@ -43,8 +43,8 @@
          withRequest:(NSURLRequest * _Nullable)req
   taskOperationQueue:(NSOperationQueue * _Nonnull)operationQueue
             callback:(_Nullable RCTResponseSenderBlock) callback;
+- (void)writeResumeData:(NSData *)data;
 
 @end
 
 #endif /* RNFetchBlobRequest_h */
-

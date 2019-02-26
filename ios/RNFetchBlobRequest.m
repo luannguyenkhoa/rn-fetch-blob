@@ -39,7 +39,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     BOOL backgroundTask;
     BOOL shouldCompleteTask;
     NSURLRequest *crrReq;
-    float lastProgress;
+    NSLock *lock;
 }
 
 @end
@@ -84,8 +84,8 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     self.expectedBytes = 0;
     self.receivedBytes = 0;
     self.options = options;
+    lock = [NSLock new];
     shouldCompleteTask = true;
-    lastProgress = 0;
     
     backgroundTask = [[options valueForKey:@"IOSBackgroundTask"] boolValue];
     // when followRedirect not set in options, defaults to TRUE
@@ -108,7 +108,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         responseFormat = AUTO;
     }
     
-    NSString * path = [self.options valueForKey:CONFIG_FILE_PATH];
+    NSString * path = [self correctPath:[self.options valueForKey:CONFIG_FILE_PATH]];
     NSString * key = [self.options valueForKey:CONFIG_KEY];
     NSURLSession * session;
     
@@ -130,7 +130,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
         mutableReq.timeoutInterval = 30.0;
     }
     defaultConfigObject.timeoutIntervalForRequest = 30.0;
-    defaultConfigObject.HTTPMaximumConnectionsPerHost = 10;
+    defaultConfigObject.HTTPMaximumConnectionsPerHost = 1;
     session = [NSURLSession sessionWithConfiguration:defaultConfigObject delegate:self delegateQueue:operationQueue];
     self.session = session;
     
@@ -175,7 +175,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
             self.task = task;
         } else if ([[options valueForKey:@"IOSDownloadTask"] boolValue]) {
             NSURLSessionDownloadTask *task = [session downloadTaskWithRequest:mutableReq];
-            NSData *resumeableData = [[NSUserDefaults standardUserDefaults] dataForKey:req.URL.absoluteString];
+            NSData *resumeableData = [self retrieveResumeData];
             if (resumeableData) {
                 task = [session downloadTaskWithResumeData:resumeableData];
             }
@@ -397,7 +397,6 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     NSString * errMsg;
     NSString * respStr;
     NSString * rnfbRespType;
-    NSString *urlKey = task.currentRequest.URL.absoluteString;
     
     dispatch_async(dispatch_get_main_queue(), ^{
         [[UIApplication sharedApplication] setNetworkActivityIndicatorVisible:NO];
@@ -408,26 +407,21 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
             errMsg = [self.customError localizedDescription];
         } else {
             if (error.code == NSURLErrorCannotWriteToFile) {
-                [self removeResumeData:crrReq.URL.absoluteString];
+                [self removeResumeData];
                 errMsg = NSLocalizedString(@"Something went wrong. Let's retry!", nil);
             } else {
                 errMsg = [error localizedDescription];
             }
         }
-        
-        NSData *resumedData = [error.userInfo objectForKey:NSURLSessionDownloadTaskResumeData];
-        if (resumedData) {
-            /// Cache resumeable data in storage
-            [[NSUserDefaults standardUserDefaults] setValue:resumedData forKey:urlKey];
-        }
     } else if (!shouldCompleteTask) {
         return;
     }
     
+    [lock lock];
     if (respFile) {
         [writeStream close];
         rnfbRespType = RESP_TYPE_PATH;
-        respStr = destPath;
+        respStr = [self correctFilePath];
     } else { // base64 response
         // #73 fix unicode data encoding issue :
         // when response type is BASE64, we should first try to encode the response data to UTF8 format
@@ -464,46 +458,80 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     receivedBytes = 0;
     self.task = nil;
     /// Remove cached resumeable data in storage if exists
-    if (!error && urlKey) {
-        [self removeResumeData:urlKey];
+    if (!error) {
+        [self removeResumeData];
     }
-    [session finishTasksAndInvalidate];
+    [session invalidateAndCancel];
     /// Remove the self from caching table
     [[[RNFetchBlobNetwork sharedInstance] requestsTable] removeObjectForKey:taskId];
-    /// Finish and invalidate duplicated task
-    [self invilidateDup:urlKey];
+    [lock unlock];
 }
 
-- (void)removeResumeData:(NSString *)key
+- (void)removeResumeData
 {
-    if (key && [[NSUserDefaults standardUserDefaults] dataForKey:key]) {
-        [[NSUserDefaults standardUserDefaults] removeObjectForKey:key];
-        [[NSUserDefaults standardUserDefaults] synchronize];
+    NSString *tempPath = [self correctTempPath];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:tempPath]) {
+        [[NSFileManager defaultManager] removeItemAtPath:tempPath error:nil];
     }
 }
 
-- (void)invilidateDup:(NSString *)url
+- (void)writeResumeData:(NSData *)data;
 {
-    NSMutableArray *eliKeys = [NSMutableArray new];
-    for (NSString *key in [[RNFetchBlobNetwork sharedInstance] requestsTable].keyEnumerator) {
-        __block BOOL matched = NO;
-        RNFetchBlobRequest *req = [[RNFetchBlobNetwork sharedInstance].requestsTable objectForKey:key];
-        [req.session getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> * _Nonnull tasks) {
-            for (NSURLSessionTask *task in tasks) {
-                /// Noted down if it's a duplicated task
-                if ([task.currentRequest.URL.absoluteString isEqualToString:url]) {
-                    matched = YES;
-                }
-            }
-        }];
-        if (matched) {
-            [req.session finishTasksAndInvalidate];
-            [eliKeys addObject:key];
+    NSString *tempPath = [self correctTempPath];
+    NSString *tempFile = [[RNFetchBlobFS getTempPath] stringByAppendingPathComponent:[tempPath lastPathComponent]];
+    BOOL written = [[NSFileManager defaultManager] createFileAtPath:tempFile contents:data attributes:nil];
+    if (!written) {
+        NSLog(@"cannot write");
+    }
+    [RNFetchBlobFS exists:tempPath callback:^(NSArray *response) {
+        NSError *err;
+        if ([response.firstObject boolValue]) {
+            [[NSFileManager defaultManager] removeItemAtPath:tempPath error:&err];
         }
+        [[NSFileManager defaultManager] moveItemAtPath:tempFile toPath:tempPath error:&err];
+        if (err) {
+            NSLog(@"error: %@", err);
+        }
+    }];
+}
+
+- (NSData *)retrieveResumeData;
+{
+    NSString *tempPath = [self correctTempPath];
+    return [[NSFileManager defaultManager] contentsAtPath:tempPath];
+}
+
+- (NSString *)correctPath:(NSString *)path;
+{
+    if (!path) {
+        return path;
     }
-    for (NSString *key in eliKeys) {
-        [[[RNFetchBlobNetwork sharedInstance] requestsTable] removeObjectForKey:key];
+    NSArray *crrComps = [[RNFetchBlobFS getDocumentDir] componentsSeparatedByString:@"/"];
+    NSUInteger crrIdx = [crrComps indexOfObject:@"Application"];
+    NSMutableArray *preferComps = [NSMutableArray arrayWithArray:[path componentsSeparatedByString:@"/"]];
+    NSUInteger preferIdx = [preferComps indexOfObject:@"Application"];
+    if (crrIdx != NSNotFound && preferIdx != NSNotFound && ![crrComps[crrIdx + 1] isEqualToString:preferComps[preferIdx + 1]]) {
+        preferComps[preferIdx + 1] = crrComps[crrIdx + 1];
+        NSString *newPath = [preferComps componentsJoinedByString:@"/"];
+        return newPath;
     }
+    return path;
+}
+
+- (NSString *)correctTempPath;
+{
+    if ([destPath containsString:@".download"]) {
+        return destPath;
+    }
+    return [destPath stringByAppendingString:@".download"];
+}
+
+- (NSString *)correctFilePath;
+{
+    if ([destPath containsString:@".download"]) {
+        return [destPath stringByDeletingPathExtension];
+    }
+    return destPath;
 }
 
 // upload progress handler
@@ -570,11 +598,13 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     NSFileManager *fileManager = [NSFileManager defaultManager];
     NSError *error;
     [fileManager removeItemAtPath:destPath error:NULL];
-    [fileManager copyItemAtPath:location.path toPath:destPath error:&error];
+    NSString *filePath = [self correctFilePath];
+    [fileManager removeItemAtPath:filePath error:NULL];
+    [fileManager copyItemAtPath:location.path toPath:filePath error:&error];
     if (error) {
         NSLog(@"Moved with error: %@", error);
     }
-    respData = [NSMutableData dataWithData:[fileManager contentsAtPath:destPath]];
+    respData = [NSMutableData dataWithData:[fileManager contentsAtPath:filePath]];
     shouldCompleteTask = true;
     [self URLSession:session task:downloadTask didCompleteWithError:error];
 }
@@ -589,10 +619,6 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 - (void)handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite url:(NSString *)url
 {
     NSNumber *now = [NSNumber numberWithFloat:(totalBytesWritten/totalBytesExpectedToWrite)];
-    if (lastProgress >= [now floatValue]) {
-        return;
-    }
-    lastProgress = [now floatValue];
     if ([self.progressConfig shouldReport:now]) {
         [self.bridge.eventDispatcher
          sendDeviceEventWithName:EVENT_PROGRESS

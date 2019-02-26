@@ -108,10 +108,10 @@ static void initialize_tables() {
              withRequest:req
       taskOperationQueue:self.taskQueue
                 callback:callback];
+    request.progressConfig = [[RNFetchBlobProgress alloc] initWithType:Download interval:@(500) count:@(100)];
     self.latestTaskId = taskId;
     @synchronized([RNFetchBlobNetwork class]) {
         [self.requestsTable setObject:request forKey:taskId];
-        [self checkProgressConfig];
     }
 }
 
@@ -131,15 +131,15 @@ static void initialize_tables() {
 
 - (void) enableProgressReport:(NSString *) taskId config:(RNFetchBlobProgress *)config
 {
-    if (config) {
-        @synchronized ([RNFetchBlobNetwork class]) {
-            if (![self.requestsTable objectForKey:taskId]) {
-                [self.rebindProgressDict setValue:config forKey:taskId];
-            } else {
-                [self.requestsTable objectForKey:taskId].progressConfig = config;
-            }
-        }
-    }
+    //    if (config) {
+    //        @synchronized ([RNFetchBlobNetwork class]) {
+    //            if (![self.requestsTable objectForKey:taskId]) {
+    //                [self.rebindProgressDict setValue:config forKey:taskId];
+    //            } else {
+    //                [self.requestsTable objectForKey:taskId].progressConfig = config;
+    //            }
+    //        }
+    //    }
 }
 
 - (void) enableUploadProgress:(NSString *) taskId config:(RNFetchBlobProgress *)config
@@ -157,26 +157,25 @@ static void initialize_tables() {
 
 - (void) cancelRequest:(NSString *)taskId
 {
-    NSURLSessionTask * task;
+    RNFetchBlobRequest * req;
     
     @synchronized ([RNFetchBlobNetwork class]) {
-        task = [self.requestsTable objectForKey:taskId].task;
+        req = [self.requestsTable objectForKey:taskId];
     }
     
-    if (task && task.state == NSURLSessionTaskStateRunning) {
-        [self cancelTask:task];
+    if (req.task && req.task.state == NSURLSessionTaskStateRunning) {
+        [self cancelTask:req.task req:req];
         [self.requestsTable removeObjectForKey:taskId];
     }
 }
 
-- (void)cancelTask:(NSURLSessionTask *)task;
+- (void)cancelTask:(NSURLSessionTask *)task req:(RNFetchBlobRequest *)req;
 {
     if ([task isKindOfClass:[NSURLSessionDownloadTask class]]) {
         [(NSURLSessionDownloadTask *)task cancelByProducingResumeData:^(NSData * _Nullable resumeData) {
-            NSString *key = task.originalRequest.URL.absoluteString;
-            if (resumeData && key) {
+            if (resumeData) {
                 /// Cache resumeable data in storage
-                [[NSUserDefaults standardUserDefaults] setValue:resumeData forKey:key];
+                [req writeResumeData:resumeData];
             }
         }];
     } else {
@@ -218,6 +217,11 @@ static void initialize_tables() {
 
 - (void)appBecomeActive
 {
+    /// Do nothing if no internet connection
+    if (self.internetReachability.currentReachabilityStatus == NotReachable) {
+        return;
+    }
+    /// Otherwise start resuming unique running tasks
     NSMutableArray *urls = [NSMutableArray new];
     @synchronized ([RNFetchBlobNetwork class]) {
         for (RNFetchBlobRequest *req in self.requestsTable.objectEnumerator) {
@@ -247,7 +251,7 @@ static void initialize_tables() {
                 [req.session getAllTasksWithCompletionHandler:^(NSArray<__kindof NSURLSessionTask *> * _Nonnull tasks) {
                     for (NSURLSessionTask *task in tasks) {
                         req.customError = [NSError errorWithDomain:@"NSErrorDomain" code:NSURLErrorNetworkConnectionLost userInfo:userInfo];
-                        [self cancelTask:task];
+                        [self cancelTask:task req:req];
                     }
                 }];
             }
@@ -257,4 +261,3 @@ static void initialize_tables() {
 }
 
 @end
-
