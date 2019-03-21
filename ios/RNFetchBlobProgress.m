@@ -46,7 +46,7 @@
     BOOL * shouldReport = delta > [self.interval doubleValue] && self.enable && result;
     if(shouldReport)
     {
-        tick++;
+        tick += 0.5;
         lastTick = [timeStampObj doubleValue];
     }
     return shouldReport;
