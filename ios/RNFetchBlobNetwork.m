@@ -109,7 +109,7 @@ static void initialize_tables() {
              withRequest:req
       taskOperationQueue:self.taskQueue
                 callback:callback];
-    request.progressConfig = [[RNFetchBlobProgress alloc] initWithType:Download interval:@(500) count:@(100)];
+    request.progressConfig = [[RNFetchBlobProgress alloc] initWithType:Download interval:@(500) count:@(200)];
     self.latestTaskId = taskId;
     @synchronized([RNFetchBlobNetwork class]) {
         [self.requestsTable setObject:request forKey:taskId];
