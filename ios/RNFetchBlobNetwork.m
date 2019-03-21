@@ -68,6 +68,7 @@ static void initialize_tables() {
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reachabilityChanged) name:kReachabilityChangedNotification object:nil];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(reachabilityChanged) name:@"kSEGReachabilityChangedNotification" object:nil];
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appDidEnterBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];
     }
     
     return self;
@@ -217,6 +218,7 @@ static void initialize_tables() {
 
 - (void)appBecomeActive
 {
+    self.isActive = true;
     /// Do nothing if no internet connection
     if (self.internetReachability.currentReachabilityStatus == NotReachable) {
         return;
@@ -258,6 +260,11 @@ static void initialize_tables() {
             [self.requestsTable removeAllObjects];
         }
     }
+}
+
+- (void)appDidEnterBackground
+{
+  self.isActive = false;
 }
 
 @end

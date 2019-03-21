@@ -623,6 +623,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     NSNumber *now = [NSNumber numberWithFloat:(totalBytesWritten/totalBytesExpectedToWrite)];
     /// Send progress event continuously without condition checker
 //    if ([self.progressConfig shouldReport:now]) {
+    if (RNFetchBlobNetwork.sharedInstance.isActive) {
         [self.bridge.eventDispatcher
          sendDeviceEventWithName:EVENT_PROGRESS
          body:@{
@@ -631,6 +632,7 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
                 @"total": [NSString stringWithFormat:@"%lld", (long long) totalBytesExpectedToWrite]
                 }
          ];
+    }
 //    }
 }
 

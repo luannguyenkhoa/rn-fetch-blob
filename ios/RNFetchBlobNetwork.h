@@ -30,6 +30,7 @@ typedef void (^EventCompleted)(void);
 @property(nonnull, nonatomic) NSMutableDictionary<NSString*, RNFetchBlobProgress*> *rebindUploadProgressDict;
 @property(nullable, nonatomic) EventCompleted completion;
 @property(nullable, nonatomic) NSString *latestTaskId;
+@property(nonatomic, assign) BOOL isActive;
 
 + (RNFetchBlobNetwork* _Nullable)sharedInstance;
 + (NSMutableDictionary  * _Nullable ) normalizeHeaders:(NSDictionary * _Nullable)headers;
