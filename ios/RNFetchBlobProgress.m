@@ -26,7 +26,7 @@
     self.type = type;
     self.enable = YES;
     lastTick = 0;
-    tick = 1;
+    tick = 0.5;
     return self;
 }
 

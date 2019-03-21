@@ -622,18 +622,18 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 {
     NSNumber *now = [NSNumber numberWithFloat:(totalBytesWritten/totalBytesExpectedToWrite)];
     /// Send progress event continuously without condition checker
-//    if ([self.progressConfig shouldReport:now]) {
-    if (RNFetchBlobNetwork.sharedInstance.isActive) {
-        [self.bridge.eventDispatcher
-         sendDeviceEventWithName:EVENT_PROGRESS
-         body:@{
-                @"taskId": taskId,
-                @"written": [NSString stringWithFormat:@"%lld", (long long) totalBytesWritten],
-                @"total": [NSString stringWithFormat:@"%lld", (long long) totalBytesExpectedToWrite]
-                }
-         ];
+    if ([self.progressConfig shouldReport:now]) {
+        if (RNFetchBlobNetwork.sharedInstance.isActive) {
+            [self.bridge.eventDispatcher
+             sendDeviceEventWithName:EVENT_PROGRESS
+             body:@{
+                    @"taskId": taskId,
+                    @"written": [NSString stringWithFormat:@"%lld", (long long) totalBytesWritten],
+                    @"total": [NSString stringWithFormat:@"%lld", (long long) totalBytesExpectedToWrite]
+                    }
+             ];
+        }
     }
-//    }
 }
 
 /// MARK: - Correct Resumeable data
