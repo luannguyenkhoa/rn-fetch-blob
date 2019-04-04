@@ -19,32 +19,35 @@
 #import "RCTBridgeModule.h"
 #endif
 
-@interface RNFetchBlobRequest : NSObject <NSURLSessionDelegate, NSURLSessionTaskDelegate, NSURLSessionDataDelegate, NSURLSessionDownloadDelegate>
+@interface RNFetchBlobRequest : NSObject
 
 @property (nullable, nonatomic) NSString * taskId;
-@property (nonatomic) long long expectedBytes;
-@property (nonatomic) long long receivedBytes;
-@property (nonatomic) BOOL isServerPush;
-@property (nullable, nonatomic) NSMutableData * respData;
 @property (nullable, strong, nonatomic) RCTResponseSenderBlock callback;
 @property (nullable, nonatomic) RCTBridge * bridge;
-@property (nullable, nonatomic) NSDictionary * options;
-@property (nullable, nonatomic) NSError * error;
 @property (nullable, nonatomic) RNFetchBlobProgress *progressConfig;
-@property (nullable, nonatomic) RNFetchBlobProgress *uploadProgressConfig;
-@property (nullable, nonatomic, weak) NSURLSessionTask *task;
-@property (nullable, nonatomic, weak) NSURLSession *session;
 @property (nullable, nonatomic) NSError* customError;
+@property (nonnull, nonatomic) NSString *reqURL;
+@property (nonnull, nonatomic) NSString *destPath;
+@property (nonatomic, assign) BOOL shouldCompleteTask;
+@property (nonatomic, nullable) NSURLSessionDownloadTask *task;
 
-- (void) sendRequest:(NSDictionary  * _Nullable )options
-       contentLength:(long)contentLength
+- (void) sendRequest:(__weak NSDictionary  * _Nullable )options
               bridge:(RCTBridge * _Nullable)bridgeRef
               taskId:(NSString * _Nullable)taskId
-         withRequest:(NSURLRequest * _Nullable)req
-  taskOperationQueue:(NSOperationQueue * _Nonnull)operationQueue
+         withRequest:(__weak NSURLRequest * _Nullable)req
+           inSession:(NSURLSession *_Nullable)session
             callback:(_Nullable RCTResponseSenderBlock) callback;
-- (void)writeResumeData:(NSData *)data;
+
+/// Path handlings
+- (void)removeResumeData;
+- (void)writeResumeData:(NSData *_Nullable)data;
+- (NSData *_Nullable)retrieveResumeData;
+- (NSString *_Nullable)correctPath:(NSString *_Nullable)path;
+- (NSString *_Nullable)correctTempPath;
+- (NSString *_Nullable)correctFilePath;
 
 @end
 
 #endif /* RNFetchBlobRequest_h */
+
+
