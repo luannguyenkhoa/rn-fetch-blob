@@ -50,11 +50,13 @@ static void initialize_tables() {
 @property(nonatomic, assign) BOOL isActive;
 @property(nonatomic, nonnull) NSURLSession *bgSession;
 @property(nonnull, nonatomic) NSMapTable<NSString*, RNFetchBlobRequest*> * requestsTable;
+@property(nonatomic) NSMutableArray *resumedTasks;
 
 @end
 
 @implementation RNFetchBlobNetwork
 
+NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
 
 - (id)init {
   self = [super init];
@@ -67,6 +69,7 @@ static void initialize_tables() {
     self.internetReachability = [Reachability reachabilityForInternetConnection];
     [self.internetReachability startNotifier];
     self.isActive = true;
+    self.resumedTasks = [NSMutableArray new];
     
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(appBecomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(appDidEnterBackground) name:UIApplicationDidEnterBackgroundNotification object:nil];
@@ -75,12 +78,14 @@ static void initialize_tables() {
     
     /// Initialize background session
     // the session trust any SSL certification
-    NSURLSessionConfiguration *defaultConfigObject = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:@"download.background.session"];
+    NSURLSessionConfiguration *defaultConfigObject = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:BGSessionIdentifier];
     defaultConfigObject.sessionSendsLaunchEvents = YES;
     defaultConfigObject.discretionary = YES;
     defaultConfigObject.timeoutIntervalForRequest = 30.0;
     defaultConfigObject.HTTPMaximumConnectionsPerHost = 1;
     self.bgSession = [NSURLSession sessionWithConfiguration:defaultConfigObject delegate:self delegateQueue:self.taskQueue];
+    
+    [[NSFileManager defaultManager] setAttributes:@{NSFileProtectionKey: NSFileProtectionNone} ofItemAtPath:[RNFetchBlobFS getDocumentDir] error:NULL];
   }
   
   return self;
@@ -95,6 +100,13 @@ static void initialize_tables() {
   });
   
   return _sharedInstance;
+}
+
+- (void)setCompletionHandlerWithIdentifier:(NSString *)identifier completionHandler:(void (^)(void))completionHandler;
+{
+  if ([BGSessionIdentifier isEqualToString:identifier]) {
+    self.completion = completionHandler;
+  }
 }
 
 - (void) sendRequest:(__weak NSDictionary  * _Nullable )options
@@ -131,6 +143,7 @@ static void initialize_tables() {
              inSession:self.bgSession
               callback:callback];
   request.progressConfig = [[RNFetchBlobProgress alloc] initWithType:Download interval:@(500) count:@(100)];
+  
   @synchronized ([RNFetchBlobNetwork class]) {
     [self.requestsTable setObject:request forKey:req.URL.absoluteString];
   }
@@ -245,7 +258,11 @@ static void initialize_tables() {
 }
 
 // MARK: - Delegate
-- (RNFetchBlobRequest *)requestFrom:(NSString *)url {
+- (RNFetchBlobRequest *)requestFrom:(NSURLSessionTask *)task {
+  NSString *url = task.originalRequest.URL.absoluteString;
+  if (!url) {
+    url = task.currentRequest.URL.absoluteString;
+  }
   RNFetchBlobRequest *req;
   @synchronized ([RNFetchBlobNetwork class]) {
     req = [self.requestsTable objectForKey:url];
@@ -272,7 +289,7 @@ static void initialize_tables() {
 
 - (void) URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
 {
-  RNFetchBlobRequest *req = [self requestFrom:task.currentRequest.URL.absoluteString];
+  RNFetchBlobRequest *req = [self requestFrom:task];
   if (!req) {
     return;
   }
@@ -292,9 +309,19 @@ static void initialize_tables() {
         [req removeResumeData];
         errMsg = NSLocalizedString(@"Something went wrong. Let's retry!", nil);
       } else {
-        NSData *resumedData = error.userInfo[NSURLSessionDownloadTaskResumeData];
-        if (resumedData) {
-          [req writeResumeData:resumedData];
+        if ([error.userInfo[NSURLErrorBackgroundTaskCancelledReasonKey] integerValue] == NSURLErrorCancelledReasonUserForceQuitApplication) {
+          NSData *resumedData = error.userInfo[NSURLSessionDownloadTaskResumeData];
+          if (resumedData) {
+            @synchronized ([RNFetchBlobNetwork class]) {
+              if (![self.resumedTasks containsObject:req.reqURL]) {
+                [self.resumedTasks addObject:req.reqURL];
+                /// Resume force-quited requests
+                req.task = [self.bgSession downloadTaskWithResumeData:resumedData];
+                [req.task resume];
+              }
+            }
+          }
+          return;
         }
         errMsg = [error localizedDescription];
       }
@@ -320,6 +347,7 @@ static void initialize_tables() {
   }
   /// Remove the self from caching table
   @synchronized ([RNFetchBlobNetwork class]) {
+    [self.resumedTasks removeObject:req.reqURL];
     [self.requestsTable removeObjectForKey:req.reqURL];
   }
 }
@@ -327,15 +355,15 @@ static void initialize_tables() {
 // MARK: - For Download Task delegate
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didResumeAtOffset:(int64_t)fileOffset expectedTotalBytes:(int64_t)expectedTotalBytes {
-  RNFetchBlobRequest *req = [self requestFrom:downloadTask.currentRequest.URL.absoluteString];
+  RNFetchBlobRequest *req = [self requestFrom:downloadTask];
   if (!req) {
     return;
   }
-  [self handleDownloadProgress:(float)fileOffset total:(float)expectedTotalBytes url:downloadTask.currentRequest.URL.absoluteString request:req];
+  [self handleDownloadProgress:(float)fileOffset total:(float)expectedTotalBytes request:req];
 }
 
 - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didFinishDownloadingToURL:(NSURL *)location {
-  RNFetchBlobRequest *req = [self requestFrom:downloadTask.currentRequest.URL.absoluteString];
+  RNFetchBlobRequest *req = [self requestFrom:downloadTask];
   if (!req) {
     return;
   }
@@ -356,32 +384,28 @@ static void initialize_tables() {
   if (totalBytesExpectedToWrite == 0) {
     return;
   }
-  RNFetchBlobRequest *req = [self requestFrom:downloadTask.currentRequest.URL.absoluteString];
+  RNFetchBlobRequest *req = [self requestFrom:downloadTask];
   if (!req) {
     return;
   }
-  [self handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite url:downloadTask.currentRequest.URL.absoluteString request:req];
+  [self handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite request:req];
 }
 
-- (void)handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite url:(NSString *)url request:(RNFetchBlobRequest *)req
+- (void)handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite request:(RNFetchBlobRequest *)req
 {
   NSNumber *now = [NSNumber numberWithFloat:(totalBytesWritten/totalBytesExpectedToWrite)];
   /// Send progress event continuously without condition checker
-  if ([req.progressConfig shouldReport:now]) {
-    if (self.isActive) {
-      NSLog(@"send process: %.2f", now.floatValue);
-      [req.bridge.eventDispatcher
-       sendDeviceEventWithName:EVENT_PROGRESS
-       body:@{
-              @"taskId": req.taskId,
-              @"written": [NSString stringWithFormat:@"%lld", (long long) totalBytesWritten],
-              @"total": [NSString stringWithFormat:@"%lld", (long long) totalBytesExpectedToWrite]
-              }
-       ];
-    }
+  if ([req.progressConfig shouldReport:now] && self.isActive) {
+    [req.bridge.eventDispatcher
+     sendDeviceEventWithName:EVENT_PROGRESS
+     body:@{
+            @"taskId": req.taskId,
+            @"written": [NSString stringWithFormat:@"%lld", (long long) totalBytesWritten],
+            @"total": [NSString stringWithFormat:@"%lld", (long long) totalBytesExpectedToWrite]
+            }
+     ];
   }
 }
-
 
 @end
 

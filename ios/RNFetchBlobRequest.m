@@ -33,6 +33,7 @@
   self.callback = callback;
   self.bridge = bridgeRef;
   self.shouldCompleteTask = false;
+  self.lock = [[NSLock alloc] init];
   
   self.destPath = [self correctPath:[options valueForKey:CONFIG_FILE_PATH]];
   NSMutableURLRequest *mutableReq = (NSMutableURLRequest *)req;
@@ -43,13 +44,14 @@
   self.reqURL = mutableReq.URL.absoluteString;
   NSURLSessionDownloadTask *task;
   NSData *resumeableData = [self retrieveResumeData];
+  [self removeResumeData];
   if (resumeableData) {
     task = [session downloadTaskWithResumeData:resumeableData];
   } else {
     task = [session downloadTaskWithRequest:mutableReq];
   }
-  [task resume];
   self.task = task;
+  [task resume];
 }
 
 - (void)removeResumeData
@@ -62,22 +64,27 @@
 
 - (void)writeResumeData:(NSData *)data;
 {
+  [self.lock lock];
   NSString *tempPath = [self correctTempPath];
+  if ([[NSFileManager defaultManager] contentsAtPath:tempPath].length == data.length) {
+    return;
+  }
+  
   NSString *tempFile = [[RNFetchBlobFS getTempPath] stringByAppendingPathComponent:[tempPath lastPathComponent]];
   BOOL written = [[NSFileManager defaultManager] createFileAtPath:tempFile contents:data attributes:nil];
   if (!written) {
     NSLog(@"cannot write");
   }
-  [RNFetchBlobFS exists:tempPath callback:^(NSArray *response) {
-    NSError *err;
-    if ([response.firstObject boolValue]) {
-      [[NSFileManager defaultManager] removeItemAtPath:tempPath error:&err];
-    }
-    [[NSFileManager defaultManager] moveItemAtPath:tempFile toPath:tempPath error:&err];
-    if (err) {
-      NSLog(@"error: %@", err);
-    }
-  }];
+  NSError *err;
+  if ([[NSFileManager defaultManager] fileExistsAtPath:tempPath]) {
+    [[NSFileManager defaultManager] removeItemAtPath:tempPath error:&err];
+  }
+  [[NSFileManager defaultManager] moveItemAtPath:tempFile toPath:tempPath error:&err];
+  if (err) {
+    NSLog(@"error move: %@", err);
+  }
+  
+  [self.lock unlock];
 }
 
 - (NSData *)retrieveResumeData;
@@ -120,6 +127,5 @@
 }
 
 @end
-
 
 
