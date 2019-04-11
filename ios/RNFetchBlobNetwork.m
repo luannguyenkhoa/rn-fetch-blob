@@ -78,11 +78,16 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
     
     /// Initialize background session
     // the session trust any SSL certification
+    
     NSURLSessionConfiguration *defaultConfigObject = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:BGSessionIdentifier];
     defaultConfigObject.sessionSendsLaunchEvents = YES;
     defaultConfigObject.discretionary = YES;
     defaultConfigObject.timeoutIntervalForRequest = 30.0;
-    defaultConfigObject.HTTPMaximumConnectionsPerHost = 1;
+    defaultConfigObject.HTTPMaximumConnectionsPerHost = 10;
+    NSUInteger mb = 1024 * 1024;
+    defaultConfigObject.URLCache = [[NSURLCache alloc] initWithMemoryCapacity:10 * mb
+                                                                 diskCapacity:20 * 1024 * 1024
+                                                                     diskPath:nil];
     self.bgSession = [NSURLSession sessionWithConfiguration:defaultConfigObject delegate:self delegateQueue:self.taskQueue];
     
     [[NSFileManager defaultManager] setAttributes:@{NSFileProtectionKey: NSFileProtectionNone} ofItemAtPath:[RNFetchBlobFS getDocumentDir] error:NULL];
@@ -126,13 +131,18 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
     return;
   }
   
-  if ([self.requestsTable objectForKey:req.URL.absoluteString]) {
-    callback(@[
-               @"The file is already being downloaded.",
-               [NSNull null],
-               [NSNull null]
-               ]);
-    return;
+  RNFetchBlobRequest *runningReq = [self.requestsTable objectForKey:req.URL.absoluteString];
+  if (runningReq) {
+    if (runningReq.task.state == NSURLSessionTaskStateRunning) {
+      callback(@[
+                 @"The file is already being downloaded.",
+                 [NSNull null],
+                 [NSNull null]
+                 ]);
+      return;
+    } else {
+      [self.requestsTable removeObjectForKey:req.URL.absoluteString];
+    }
   }
   
   RNFetchBlobRequest *request = [[RNFetchBlobRequest alloc] init];
@@ -309,7 +319,8 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
         [req removeResumeData];
         errMsg = NSLocalizedString(@"Something went wrong. Let's retry!", nil);
       } else {
-        if ([error.userInfo[NSURLErrorBackgroundTaskCancelledReasonKey] integerValue] == NSURLErrorCancelledReasonUserForceQuitApplication) {
+        id reason = error.userInfo[NSURLErrorBackgroundTaskCancelledReasonKey];
+        if (reason && [reason integerValue] == NSURLErrorCancelledReasonUserForceQuitApplication) {
           NSData *resumedData = error.userInfo[NSURLSessionDownloadTaskResumeData];
           if (resumedData) {
             @synchronized ([RNFetchBlobNetwork class]) {
@@ -350,6 +361,11 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
     [self.resumedTasks removeObject:req.reqURL];
     [self.requestsTable removeObjectForKey:req.reqURL];
   }
+}
+
+- (void)URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential * _Nullable))completionHandler {
+  NSURLCredential *credential = [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust];
+  completionHandler(NSURLSessionAuthChallengeUseCredential, credential);
 }
 
 // MARK: - For Download Task delegate
@@ -394,6 +410,7 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
 - (void)handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite request:(RNFetchBlobRequest *)req
 {
   NSNumber *now = [NSNumber numberWithFloat:(totalBytesWritten/totalBytesExpectedToWrite)];
+  NSLog(@"PRogress: %.2f", now.floatValue);
   /// Send progress event continuously without condition checker
   if ([req.progressConfig shouldReport:now] && self.isActive) {
     [req.bridge.eventDispatcher
