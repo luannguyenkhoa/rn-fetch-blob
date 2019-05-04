@@ -186,15 +186,14 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
   __weak typeof(RNFetchBlobNetwork) *wself = self;
   [self.bgSession getTasksWithCompletionHandler:^(NSArray<NSURLSessionDataTask *> * _Nonnull dataTasks, NSArray<NSURLSessionUploadTask *> * _Nonnull uploadTasks, NSArray<NSURLSessionDownloadTask *> * _Nonnull downloadTasks) {
     for (NSURLSessionDownloadTask *task in downloadTasks) {
-      if (task.state == NSURLSessionTaskStateCompleted && task.countOfBytesReceived < task.countOfBytesExpectedToReceive) {
-        if (task.error && task.error.code == -999 && task.error.userInfo[NSURLSessionDownloadTaskResumeData] != nil) {
-          RNFetchBlobRequest *req = [[RNFetchBlobRequest alloc] init];
-          NSString *path = [wself retrievePathFrom:task.currentRequest.URL.absoluteString];
-          if (path) {
-            req.destPath = path;
-            req.reqURL = task.currentRequest.URL.absoluteString;
-            [req writeResumeData:task.error.userInfo[NSURLSessionDownloadTaskResumeData]];
-          }
+      NSData *resumedData = task.error.userInfo[NSURLSessionDownloadTaskResumeData];
+      if (resumedData) {
+        RNFetchBlobRequest *req = [[RNFetchBlobRequest alloc] init];
+        NSString *path = [wself retrievePathFrom:task.currentRequest.URL.absoluteString];
+        if (path) {
+          req.destPath = [req correctPath: path];
+          req.reqURL = task.currentRequest.URL.absoluteString;
+          [req writeResumeData:resumedData];
         }
       }
       [task cancel];
@@ -429,7 +428,6 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
 - (void)handleDownloadProgress:(float)totalBytesWritten total:(float)totalBytesExpectedToWrite request:(RNFetchBlobRequest *)req
 {
   NSNumber *now = [NSNumber numberWithFloat:(totalBytesWritten/totalBytesExpectedToWrite)];
-  NSLog(@"PRogress: %.2f", now.floatValue);
   /// Send progress event continuously without condition checker
   if ([req.progressConfig shouldReport:now] && self.isActive) {
     [req.bridge.eventDispatcher
