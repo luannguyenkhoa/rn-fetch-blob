@@ -638,7 +638,9 @@ RCT_EXPORT_METHOD(emitExpiredEvent:(RCTResponseSenderBlock)callback)
     [RNFetchBlobNetwork emitExpiredTasks];
 }
 
-
-
+RCT_EXPORT_METHOD(cacheExistDownloadsIfNeeded)
+{
+  [[RNFetchBlobNetwork sharedInstance] cacheExistDownloadsIfNeeded];
+}
 
 @end
