@@ -121,15 +121,6 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
          withRequest:(__weak NSURLRequest * _Nullable)req
             callback:(_Nullable RCTResponseSenderBlock) callback
 {
-  /// Turn back immediately if no network connection
-  if (self.internetReachability.currentReachabilityStatus == NotReachable) {
-    callback(@[
-               @"No network connection",
-               [NSNull null],
-               [NSNull null]
-               ]);
-    return;
-  }
   
   RNFetchBlobRequest *runningReq = [self.requestsTable objectForKey:req.URL.absoluteString];
   if (runningReq) {
@@ -156,6 +147,7 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
   
   @synchronized ([RNFetchBlobNetwork class]) {
     [self.requestsTable setObject:request forKey:req.URL.absoluteString];
+    [self storePath:request.destPath withURL:req.URL.absoluteString];
   }
 }
 
@@ -167,6 +159,47 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
 - (void) enableUploadProgress:(NSString *) taskId config:(RNFetchBlobProgress *)config
 {
   
+}
+
+- (void)storePath:(NSString *)path withURL:(NSString *)url {
+  NSMutableDictionary *dict = [[[NSUserDefaults standardUserDefaults] dictionaryForKey:@"BG_STORAGE_CACHE"] mutableCopy];
+  if (!dict) {
+    dict = [NSMutableDictionary new];
+  }
+  dict[url] = path;
+  [[NSUserDefaults standardUserDefaults] setObject:dict forKey:@"BG_STORAGE_CACHE"];
+}
+
+- (NSString *)retrievePathFrom:(NSString *)url {
+  NSDictionary *dict = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"BG_STORAGE_CACHE"];
+  return dict[url];
+}
+
+- (void)removePathFrom:(NSString *)url {
+  NSMutableDictionary *dict = [[[NSUserDefaults standardUserDefaults] dictionaryForKey:@"BG_STORAGE_CACHE"] mutableCopy];
+  if (dict) {
+    [dict removeObjectForKey:url];
+  }
+}
+
+- (void)cacheExistDownloadsIfNeeded {
+  __weak typeof(RNFetchBlobNetwork) *wself = self;
+  [self.bgSession getTasksWithCompletionHandler:^(NSArray<NSURLSessionDataTask *> * _Nonnull dataTasks, NSArray<NSURLSessionUploadTask *> * _Nonnull uploadTasks, NSArray<NSURLSessionDownloadTask *> * _Nonnull downloadTasks) {
+    for (NSURLSessionDownloadTask *task in downloadTasks) {
+      if (task.state == NSURLSessionTaskStateCompleted && task.countOfBytesReceived < task.countOfBytesExpectedToReceive) {
+        if (task.error && task.error.code == -999 && task.error.userInfo[NSURLSessionDownloadTaskResumeData] != nil) {
+          RNFetchBlobRequest *req = [[RNFetchBlobRequest alloc] init];
+          NSString *path = [wself retrievePathFrom:task.currentRequest.URL.absoluteString];
+          if (path) {
+            req.destPath = path;
+            req.reqURL = task.currentRequest.URL.absoluteString;
+            [req writeResumeData:task.error.userInfo[NSURLSessionDownloadTaskResumeData]];
+          }
+        }
+      }
+      [task cancel];
+    }
+  }];
 }
 
 - (void) cancelRequest:(NSString *)taskId
@@ -319,21 +352,6 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
         [req removeResumeData];
         errMsg = NSLocalizedString(@"Something went wrong. Let's retry!", nil);
       } else {
-        id reason = error.userInfo[NSURLErrorBackgroundTaskCancelledReasonKey];
-        if (reason && [reason integerValue] == NSURLErrorCancelledReasonUserForceQuitApplication) {
-          NSData *resumedData = error.userInfo[NSURLSessionDownloadTaskResumeData];
-          if (resumedData) {
-            @synchronized ([RNFetchBlobNetwork class]) {
-              if (![self.resumedTasks containsObject:req.reqURL]) {
-                [self.resumedTasks addObject:req.reqURL];
-                /// Resume force-quited requests
-                req.task = [self.bgSession downloadTaskWithResumeData:resumedData];
-                [req.task resume];
-              }
-            }
-          }
-          return;
-        }
         errMsg = [error localizedDescription];
       }
     }
@@ -360,6 +378,7 @@ NSString *const BGSessionIdentifier = @"RNFetchBlodBackgroundSession";
   @synchronized ([RNFetchBlobNetwork class]) {
     [self.resumedTasks removeObject:req.reqURL];
     [self.requestsTable removeObjectForKey:req.reqURL];
+    [self removePathFrom:req.reqURL];
   }
 }
 

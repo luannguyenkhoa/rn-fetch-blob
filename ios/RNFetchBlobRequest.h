@@ -30,7 +30,6 @@
 @property (nonnull, nonatomic) NSString *destPath;
 @property (nonatomic, assign) BOOL shouldCompleteTask;
 @property (nonatomic, nullable) NSURLSessionDownloadTask *task;
-@property (nullable, nonatomic) NSLock *lock;
 
 - (void) sendRequest:(__weak NSDictionary  * _Nullable )options
               bridge:(RCTBridge * _Nullable)bridgeRef
@@ -49,4 +48,5 @@
 @end
 
 #endif /* RNFetchBlobRequest_h */
+
 

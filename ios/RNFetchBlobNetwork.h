@@ -41,6 +41,7 @@ typedef void (^EventCompleted)(void);
 - (void) enableProgressReport:(NSString * _Nonnull) taskId config:(RNFetchBlobProgress * _Nullable)config;
 - (void) enableUploadProgress:(NSString * _Nonnull) taskId config:(RNFetchBlobProgress * _Nullable)config;
 - (void)setCompletionHandlerWithIdentifier: (NSString *_Nonnull)identifier completionHandler: (void (^_Nullable)(void))completionHandler;
+- (void)cacheExistDownloadsIfNeeded;
 
 @end
 
